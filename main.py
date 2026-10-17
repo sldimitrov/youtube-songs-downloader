@@ -6,6 +6,8 @@ import os
 import time
 
 # TODO: Sanitize file names for iOS and Windows
+# TODO: Sanitize the song's names
+
 # TODO: Speed Up with Concurrency
 # TODO: Add arguments to be able to use it via the CLI
 """
@@ -13,88 +15,96 @@ import time
     to download multiple tracks at the same time.
 """
 
-# TODO: If song is already in the folder, skip its downloading
-# TODO: Sanitize the song's names
 
 def parse_bytes_in_mb(value: float) -> float:
     return value / (1024 * 1024)
 
-# def load_urls():
-#     pass
-#
-# def download_single_song():
-#     pass
-#
-# def main():
-#     pass
-#
-# if __name__ == "__main__":
-#     main()
 
-overall_start = time.perf_counter()
-cleaned_urls = []
+def load_urls(path: str) -> list:
+    urls = []
 
-# Read urls from a file
-try:
-    with open("songs_to_download.txt", "r") as f:
-        for line in f.readlines():
-            cleaned_urls.append(line.strip())
-except FileNotFoundError:
-    print("Error: songs_to_download.txt file not found in the current directory.")
-    raise SystemExit
-except Exception as e:
-    print(e)
-    raise SystemExit
-
-# Initialize metrics
-process = psutil.Process(os.getpid())
-total_memory = 0
-total_song_duration = 0
-
-# Setup logging configuration
-logging.basicConfig(
-    filename='downloader.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
-logging.info("--- Batch download started ---")
-
-# Download each song
-for idx, url in enumerate(cleaned_urls):
-    start_time = time.perf_counter()
     try:
-        yt = YouTube(url)
+        with open(path, "r") as f:
+            for line in f.readlines():
+                urls.append(line.strip())
+    except FileNotFoundError:
+        print(f"Error: {path} file not found in the current directory.")
+        raise SystemExit
+    except Exception as e:
+        print(e)
+        raise SystemExit
 
-        video_title = yt.title
+    return urls
 
-        print(f'Downloading {video_title}')
 
-        audio_stream = yt.streams.filter(only_audio=True).first()
+def check_if_song_is_downloaded(song_name: str) -> bool:
+    if os.path.exists(f"downloaded_songs/{song_name}.mp3"):
+        return True
+    return False
 
-        # TODO: Replace with your our class
-        audio_stream.download(
-            output_path='./songs_to_download',
-            filename=f'{video_title}.mp3',
-        )
 
-        duration = time.perf_counter() - start_time
-        memory_usage = parse_bytes_in_mb(value=process.memory_info().rss)
+def download_single_song(url: str, process: psutil.Process) -> None:
+    start_time = time.perf_counter()
+    yt = YouTube(url)
+    video_title = yt.title
 
-        msg = f"Success '{video_title}' downloaded in {duration:.2f}s | Memory usage - {memory_usage:.2f} MB"
-        logging.info(msg)
-        print(msg)
-    except RegexMatchError:
-        print("One of the songs was not found.")
-    except:
-        print("Something went wrong.")
+    if check_if_song_is_downloaded(video_title):
+        logging.info(f"Skipping {video_title}")
+        print(f"Skipping '{video_title}', because it's already downloaded.")
+        return
 
-# Calculate process time
-overall_duration = time.perf_counter() - overall_start
+    print(f'Downloading {video_title}')
 
-# Log metrics data
-print(f"All downloads finished in {overall_duration:.2f} seconds.")
-logging.info(f"--- Batch download completed in {overall_duration} seconds. ---")
+    audio_stream = yt.streams.filter(only_audio=True).first()
 
-# Exit the program
-exit()
+    # TODO: Replace with your our class
+    audio_stream.download(
+        output_path='./downloaded_songs',
+        filename=f'{video_title}.mp3',
+    )
+
+    duration = time.perf_counter() - start_time
+    memory_usage = parse_bytes_in_mb(value=process.memory_info().rss)
+
+    msg = f"Success '{video_title}' downloaded in {duration:.2f}s | Memory usage - {memory_usage:.2f} MB"
+    logging.info(msg)
+    print(msg)
+
+
+def main():
+    overall_start = time.perf_counter()
+
+    # Read urls from a file
+    cleaned_urls = load_urls("songs_to_download.txt")
+
+    # Initialize metrics
+    process = psutil.Process(os.getpid())
+
+    # Setup logging configuration
+    logging.basicConfig(
+        filename='downloader.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
+    logging.info("--- Batch download started ---")
+
+    # Download each song
+    for idx, url in enumerate(cleaned_urls):
+        try:
+            download_single_song(url=url, process=process)
+        except RegexMatchError:
+            print("One of the songs was not found.")
+        except:
+            print("Something went wrong.")
+
+    # Calculate process time
+    overall_duration = time.perf_counter() - overall_start
+
+    # Log metrics data
+    print(f"Process finished in {overall_duration:.2f} seconds.")
+    logging.info(f"--- Batch download completed in {overall_duration:.2f} seconds. ---")
+
+
+if __name__ == "__main__":
+    main()
