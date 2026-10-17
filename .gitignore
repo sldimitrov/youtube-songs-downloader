@@ -1,5 +1,6 @@
 .venv/
-songs_to_download/
+downloaded_songs/
+songs_to_download_real.txt
 downloader.log
 __pycache__/
 .idea/
