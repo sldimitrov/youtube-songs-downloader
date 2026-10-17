@@ -1,3 +1,5 @@
+import argparse
+
 from pytube.exceptions import RegexMatchError
 from pytubefix import YouTube
 import logging
@@ -14,6 +16,32 @@ import time
     Use Python's concurrent.futures (ThreadPoolExecutor)
     to download multiple tracks at the same time.
 """
+
+def shorten_song_name(song_name: str) -> str:
+    if len(song_name) > 50:
+        return f"{song_name[:50]}..."
+    return song_name
+
+
+def parse_arguments():
+    """Parses command line arguments"""
+    parser = argparse.ArgumentParser(description="Download YouTube songs to MP3 from a text file.")
+
+    parser.add_argument(
+        "-f", "--file",
+        type=str,
+        default="songs_to_download.txt",
+        help="Path to the text file containing YouTube URLs (default: songs_to_download.txt)"
+    )
+
+    parser.add_argument(
+        "-o", "--output",
+        type=str,
+        default="./downloaded_songs",
+        help="Path to the directory where the downloaded songs will be saved (default: ./downloaded_songs)"
+    )
+
+    return parser.parse_args()
 
 
 def parse_bytes_in_mb(value: float) -> float:
@@ -34,48 +62,51 @@ def load_urls(path: str) -> list:
         print(e)
         raise SystemExit
 
+    if len(urls) == 0:
+        print(f"The file '{path}' is empty.")
+        raise SystemExit
+
     return urls
 
 
-def check_if_song_is_downloaded(song_name: str) -> bool:
-    if os.path.exists(f"downloaded_songs/{song_name}.mp3"):
+def check_if_song_is_downloaded(song_name: str, output_path: str) -> bool:
+    if os.path.exists(f"{output_path}/{song_name}.mp3"):
         return True
     return False
 
 
-def download_single_song(url: str, process: psutil.Process) -> None:
+def download_single_song(url: str, process: psutil.Process, output_path: str) -> None:
     start_time = time.perf_counter()
     yt = YouTube(url)
     video_title = yt.title
 
-    if check_if_song_is_downloaded(video_title):
+    if check_if_song_is_downloaded(video_title, output_path=output_path):
         logging.info(f"Skipping {video_title}")
         print(f"Skipping '{video_title}', because it's already downloaded.")
         return
 
-    print(f'Downloading {video_title}')
+    print(f'Downloading {shorten_song_name(song_name=video_title)}')
 
     audio_stream = yt.streams.filter(only_audio=True).first()
-
-    # TODO: Replace with your our class
     audio_stream.download(
-        output_path='./downloaded_songs',
+        output_path=f'{output_path}',
         filename=f'{video_title}.mp3',
     )
 
     duration = time.perf_counter() - start_time
     memory_usage = parse_bytes_in_mb(value=process.memory_info().rss)
 
-    msg = f"Success '{video_title}' downloaded in {duration:.2f}s | Memory usage - {memory_usage:.2f} MB"
+    msg = f"Success '{shorten_song_name(song_name=video_title)}' downloaded in {duration:.2f}s | Memory usage - {memory_usage:.2f} MB"
     logging.info(msg)
     print(msg)
 
 
 def main():
+    args = parse_arguments()
     overall_start = time.perf_counter()
 
     # Read urls from a file
-    cleaned_urls = load_urls("songs_to_download.txt")
+    cleaned_urls = load_urls(args.file)
 
     # Initialize metrics
     process = psutil.Process(os.getpid())
@@ -92,7 +123,7 @@ def main():
     # Download each song
     for idx, url in enumerate(cleaned_urls):
         try:
-            download_single_song(url=url, process=process)
+            download_single_song(url=url, process=process, output_path=args.output)
         except RegexMatchError:
             print("One of the songs was not found.")
         except:
