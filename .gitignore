@@ -1,0 +1,5 @@
+.venv/
+songs_to_download/
+downloader.log
+__pycache__/
+.idea/
