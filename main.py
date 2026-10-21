@@ -5,6 +5,7 @@ from pytubefix import YouTube
 import logging
 import psutil
 import os
+from pydub import AudioSegment
 import time
 
 # TODO: Sanitize file names for iOS and Windows
@@ -87,19 +88,43 @@ def download_single_song(url: str, process: psutil.Process, output_path: str) ->
 
     print(f'Downloading {shorten_song_name(song_name=video_title)}')
 
+    # 1. Download the raw audio stream. YouTube serves AAC (.m4a) or Opus (.webm),
+    # never real MP3, so keep the real extension instead of pretending it's .mp3
     audio_stream = yt.streams.filter(only_audio=True).first()
-    audio_stream.download(
-        output_path=f'{output_path}',
-        filename=f'{video_title}.mp3',
+    temp_file = audio_stream.download(
+        output_path=output_path,
+        filename=f"temp_{video_title}.{audio_stream.subtype}",
     )
+
+    # 2. Convert and export strictly to car-friendly MP3 (44.1 kHz, stereo, 192k CBR)
+    final_path = os.path.join(output_path, f"{video_title}.mp3")
+    try:
+        sound = AudioSegment.from_file(temp_file)
+        sound.export(
+            final_path,
+            format="mp3",
+            bitrate="192k",
+            parameters=[
+                "-ar", "44100",  # Forces CD-quality sample rate for older head units
+                "-ac", "2",
+                "-id3v2_version", "3",  # Car stereos often choke on ffmpeg's default ID3v2.4 tags
+                "-write_id3v1", "1",
+            ]
+        )
+    except Exception as e:
+        print(f"Error converting audio for {video_title}: {e}")
+        logging.error(f"Conversion error for {video_title}: {e}")
+    finally:
+        # 3. Clean up the temporary file
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
 
     duration = time.perf_counter() - start_time
     memory_usage = parse_bytes_in_mb(value=process.memory_info().rss)
 
-    msg = f"Success '{shorten_song_name(song_name=video_title)}' downloaded in {duration:.2f}s | Memory usage - {memory_usage:.2f} MB"
+    msg = f"Success '{shorten_song_name(song_name=video_title)}' downloaded & converted in {duration:.2f}s | Memory usage - {memory_usage:.2f} MB"
     logging.info(msg)
     print(msg)
-
 
 def main():
     args = parse_arguments()
